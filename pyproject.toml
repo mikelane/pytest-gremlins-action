@@ -9,7 +9,7 @@ dev = [
     "behave==1.3.3",
     "pytest>=9.0,<10",
     "pytest-gremlins==1.5.0",
-    "pytest-xdist>=3.0",
+    "pytest-xdist>=3.0,<4",
 ]
 
 [tool.pytest.ini_options]

@@ -1,7 +1,7 @@
 """Behave environment hooks."""
+import os
 import shutil
 import tempfile
-import os
 
 
 def before_scenario(context, scenario):

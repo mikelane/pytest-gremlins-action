@@ -1,6 +1,6 @@
 # pytest-gremlins-action
 
-A GitHub Actions composite action that runs [pytest-gremlins](https://github.com/mikelane/pytest-gremlins) mutation testing with parallel execution, incremental caching, and an optional score threshold gate.
+Drop [pytest-gremlins](https://github.com/mikelane/pytest-gremlins) mutation testing into your CI pipeline in one step.
 
 ## Usage
 
@@ -51,8 +51,8 @@ jobs:
 
 | Output | Description |
 |--------|-------------|
-| `mutation-score` | Mutation score as a numeric string, e.g. `"87.5"`. Only available inside an Actions runner. |
+| `mutation-score` | Mutation score as a numeric string, e.g. `"87.5"`. |
 
 ## Prerequisites
 
-`pytest-gremlins` must be in your project's test dependencies. When `parallel` is `true` (the default), `pytest-xdist` is also required.
+`pytest-gremlins` must be installed in the Python environment before this action runs. When `parallel` is `true` (the default), `pytest-xdist` is also required — omitting it will cause the run to fail with a missing plugin error.

@@ -57,32 +57,54 @@ runs:
         if [ "${{ inputs.cache }}" = "true" ]; then
           EXTRA_ARGS="$EXTRA_ARGS --gremlin-cache"
         fi
+
+        echo "Running: python -m pytest --gremlins${EXTRA_ARGS:+ $EXTRA_ARGS}${inputs_args:+ ${{ inputs.args }}}"
+
         python -m pytest --gremlins $EXTRA_ARGS ${{ inputs.args }} \
-          2>&1 | tee /tmp/gremlins-output.txt
+          2>&1 | tee ${RUNNER_TEMP}/gremlins-output.txt
         PYTEST_EXIT=${PIPESTATUS[0]}
 
-        # Parse mutation score from "Zapped: N gremlins (XX%)" line
-        SCORE=$(python3 -c "
+        # Parse mutation score from "Zapped: N gremlins (XX%)" line.
+        # Emit a diagnostic when the line is absent so format regressions are
+        # visible rather than silently surfacing as a misleading score of 0.
+        MUTATION_SCORE=$(python3 -c "
         import re, sys
-        m = re.search(
-            r'Zapped: \d+ gremlins \((\d+(?:\.\d+)?)%\)',
-            open('/tmp/gremlins-output.txt').read()
-        )
-        print(m.group(1) if m else '0')
-        " 2>/dev/null || echo "0")
+        text = open('${RUNNER_TEMP}/gremlins-output.txt').read()
+        m = re.search(r'Zapped: \d+ gremlins \((\d+(?:\.\d+)?)%\)', text)
+        if m:
+            print(m.group(1))
+        else:
+            print('pytest-gremlins: WARNING: could not parse mutation score from output; defaulting to 0', file=sys.stderr)
+            print('0')
+        ")
+        if [ $? -ne 0 ]; then
+          echo "pytest-gremlins: ERROR: score extraction script failed; defaulting score to 0"
+          MUTATION_SCORE="0"
+        fi
 
-        echo "mutation-score=$SCORE" >> "$GITHUB_OUTPUT"
-        echo "pytest-gremlins: Mutation score: ${SCORE}%"
+        echo "mutation-score=$MUTATION_SCORE" >> "$GITHUB_OUTPUT"
+        echo "pytest-gremlins: Mutation score: ${MUTATION_SCORE}%"
 
         # Enforce threshold gate
         THRESHOLD="${{ inputs.threshold }}"
         if [ "$THRESHOLD" != "0" ]; then
-          BELOW=$(python3 -c "
+          # Validate threshold is numeric before interpolating into Python to
+          # prevent code injection via crafted input values.
+          if [[ ! "$THRESHOLD" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+            echo "Error: threshold must be a number between 0 and 100, got: $THRESHOLD"
+            exit 1
+          fi
+          python3 -c "
         import sys
-        sys.exit(0 if float('$SCORE') >= float('$THRESHOLD') else 1)
-          " 2>/dev/null; echo $?)
-          if [ "$BELOW" = "1" ]; then
-            echo "Mutation score ${SCORE}% is below threshold ${THRESHOLD}%"
+        score = float('$MUTATION_SCORE')
+        threshold = float('$THRESHOLD')
+        if score < threshold:
+            print(f'pytest-gremlins: Mutation score {score}% is below threshold {threshold}%', file=sys.stderr)
+            sys.exit(1)
+          "
+          GATE_EXIT=$?
+          if [ "$GATE_EXIT" = "1" ]; then
+            echo "pytest-gremlins: Threshold gate failed: score ${MUTATION_SCORE}% < required ${THRESHOLD}%"
             exit 1
           fi
         fi
@@ -90,7 +112,7 @@ runs:
         exit $PYTEST_EXIT
 
     - name: Save IncrementalCache
-      if: inputs.cache == 'true' && always()
+      if: always() && inputs.cache == 'true'
       uses: actions/cache@v4
       with:
         path: .gremlins_cache

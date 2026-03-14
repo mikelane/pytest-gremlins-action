@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-uv.lock
 .venv/
 
 # Secret and credential files — never commit these
@@ -23,3 +22,4 @@ google-credentials.json
 id_rsa
 id_ecdsa
 id_ed25519
+.ssh/

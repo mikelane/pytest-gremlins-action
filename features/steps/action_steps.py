@@ -5,10 +5,8 @@ spike-fixture directory. No GitHub Actions runtime is needed for the red
 phase — the action is a thin wrapper around pytest-gremlins, so we test
 the underlying tool behavior directly.
 
-NOTE: The `mutation-score` output written to $GITHUB_OUTPUT cannot be tested
-locally because the composite action step writes it only inside an Actions
-runner environment. Scenarios that depend on $GITHUB_OUTPUT are tagged
-@ci-only and are excluded from local behave runs.
+NOTE: The `mutation-score` output written to $GITHUB_OUTPUT is only set inside
+an Actions runner environment and is not verified by these local BDD scenarios.
 """
 import os
 import re
@@ -50,22 +48,22 @@ def _copy_fixture(context):
     .coverage.* and other ephemeral artefacts that interfere with pytest
     rootdir detection and coverage collection.
     """
-    dest = os.path.join(context.tmpdir, 'fixture')
-    os.makedirs(dest, exist_ok=True)
+    fixture_dest_dir = os.path.join(context.tmpdir, 'fixture')
+    os.makedirs(fixture_dest_dir, exist_ok=True)
     for name in _FIXTURE_INCLUDES:
-        src = os.path.join(context.fixture_src, name)
-        dst = os.path.join(dest, name)
+        source_path = os.path.join(context.fixture_src, name)
+        destination_path = os.path.join(fixture_dest_dir, name)
         try:
-            if os.path.isdir(src):
-                shutil.copytree(src, dst)
+            if os.path.isdir(source_path):
+                shutil.copytree(source_path, destination_path)
             else:
-                shutil.copy2(src, dst)
+                shutil.copy2(source_path, destination_path)
         except OSError as exc:
             raise RuntimeError(
                 f'[pga-bdd] Failed to copy fixture item {name!r} '
-                f'from {src!r} to {dst!r}: {exc}'
+                f'from {source_path!r} to {destination_path!r}: {exc}'
             ) from exc
-    return dest
+    return fixture_dest_dir
 
 
 def _run_pytest_gremlins(fixture_dir, extra_args=None, env_overrides=None):
@@ -85,17 +83,27 @@ def _run_pytest_gremlins(fixture_dir, extra_args=None, env_overrides=None):
     if env_overrides:
         env.update(env_overrides)
     start_time = time.monotonic()
-    process_result = subprocess.run(
-        cmd,
-        cwd=fixture_dir,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=120,
-    )
+    try:
+        completed_process = subprocess.run(
+            cmd,
+            cwd=fixture_dir,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired as exc:
+        elapsed = time.monotonic() - start_time
+        partial_output = (exc.stdout or b'').decode('utf-8', errors='replace') if isinstance(exc.stdout, bytes) else (exc.stdout or '')
+        raise RuntimeError(
+            f'[pga-bdd] pytest-gremlins timed out after {elapsed:.1f}s.\n'
+            f'Command: {cmd}\n'
+            f'Fixture: {fixture_dir}\n'
+            f'Partial output:\n{partial_output}'
+        ) from exc
     elapsed = time.monotonic() - start_time
-    combined_output = process_result.stdout + '\n' + process_result.stderr
-    return combined_output, process_result.returncode, elapsed
+    combined_output = completed_process.stdout + '\n' + completed_process.stderr
+    return combined_output, completed_process.returncode, elapsed
 
 
 # ---------------------------------------------------------------------------
@@ -110,9 +118,9 @@ def step_fixture_with_count(context, count):
 
 @given('a workflow using `uses: mikelane/pytest-gremlins-action@v1`')
 def step_workflow_uses_action(context):
-    # Seed extra_args; each scenario-level Given step overwrites it to match
-    # the specific action inputs under test.
-    context.extra_args = []
+    # This step marks scenarios that exercise composite action behaviour.
+    # extra_args is already initialised to [] by before_scenario in environment.py.
+    pass
 
 
 @given('the workflow has no extra inputs')
@@ -137,12 +145,12 @@ def step_workflow_threshold(context, value):
 def step_cold_run_populated_cache(context):
     # Merge context.extra_args so the cold run respects the action's parallelism
     # setting, then force-add --gremlin-cache (cache is the point of this step).
-    extra = list(context.extra_args)
-    if '--gremlin-cache' not in extra:
-        extra.append('--gremlin-cache')
+    extra_args_with_cache = list(context.extra_args)
+    if '--gremlin-cache' not in extra_args_with_cache:
+        extra_args_with_cache.append('--gremlin-cache')
     output, returncode, elapsed = _run_pytest_gremlins(
         context.fixture_dir,
-        extra_args=extra,
+        extra_args=extra_args_with_cache,
     )
     context.cold_output = output
     context.cold_elapsed = elapsed
@@ -159,10 +167,8 @@ def step_workflow_parallel_false(context):
 
 @given("the workflow has `cache: 'false'`")
 def step_workflow_cache_false(context):
-    # Note: this step verifies baseline absence (no --gremlin-cache → no cache dir).
-    # It cannot prove active suppression because the composite action doesn't
-    # exist yet. The GREEN phase will need to confirm the action omits the flag
-    # when cache=false, not just that the flag is absent here.
+    # action.yml omits --gremlin-cache when cache='false'; the absence of the
+    # flag is what we verify here (no cache dir created after the run).
     context.extra_args = ['-n', 'auto']  # xdist but cache NOT enabled
 
 
@@ -194,12 +200,12 @@ def step_ci_job_runs(context):
 def step_ci_job_runs_again(context):
     # Merge context.extra_args so the warm run uses the same parallelism
     # setting as the cold run, then force-add --gremlin-cache.
-    extra = list(context.extra_args)
-    if '--gremlin-cache' not in extra:
-        extra.append('--gremlin-cache')
+    extra_args_with_cache = list(context.extra_args)
+    if '--gremlin-cache' not in extra_args_with_cache:
+        extra_args_with_cache.append('--gremlin-cache')
     output, returncode, elapsed = _run_pytest_gremlins(
         context.fixture_dir,
-        extra_args=extra,
+        extra_args=extra_args_with_cache,
     )
     context.warm_output = output
     context.warm_returncode = returncode
@@ -255,11 +261,11 @@ def step_log_contains_parallel_line(context, pattern):
 
 @then('the worker count is greater than 1')
 def step_worker_count_greater_than_one(context):
-    match = re.search(r'Starting parallel execution with (\d+) workers', context.output)
-    assert match, (
+    worker_count_match = re.search(r'Starting parallel execution with (\d+) workers', context.output)
+    assert worker_count_match, (
         f'Could not find numeric worker count in output:\n{context.output}'
     )
-    worker_count = int(match.group(1))
+    worker_count = int(worker_count_match.group(1))
     assert worker_count > 1, (
         f'Expected worker count > 1 for parallel execution, but got {worker_count}.'
     )
@@ -289,11 +295,6 @@ def step_cache_dir_present(context):
 
 @then('the warm run reports at least 1 cache hit')
 def step_warm_run_cache_hit(context):
-    # Red-phase failure: pytest-gremlins' IncrementalCache keys entries by
-    # (source hash + coverage hash). With no coverage data collected (xdist
-    # workers emit "No data was collected"), every gremlin is a cache miss.
-    # This step will pass (GREEN) once the composite action configures
-    # pytest-cov so that coverage data is collected and cache keys resolve.
     match = re.search(r'Cache: (\d+) hits', context.warm_output)
     assert match, (
         f'Could not find cache hit line in output:\n{context.warm_output}'
