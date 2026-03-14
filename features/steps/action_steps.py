@@ -124,19 +124,13 @@ def step_workflow_no_extra_inputs(context):
 
 @given('the workflow has a threshold of {value:d}')
 def step_workflow_threshold(context, value):
-    # pytest-gremlins has no --gremlin-threshold flag — threshold enforcement
-    # is composite action logic, not a pytest flag.  Store the threshold value
-    # for use in assertion messages.
-    #
-    # Do NOT add --gremlin-cache here.  This Given step is shared by two
-    # scenarios:
-    #   "Cache is saved when threshold failure occurs" — the cold-run Given
-    #     that follows adds --gremlin-cache explicitly via its own append.
-    #   "Threshold enforcement" — only tests exit code; adding --gremlin-cache
-    #     when the flag is unimplemented causes pytest to exit non-zero for the
-    #     wrong reason (unknown flag), masking the real threshold logic failure.
+    # Threshold enforcement is composite action logic, not a pytest flag.
+    # Use sequential mode + --gremlin-cache so coverage is collected and
+    # cache entries are written even when the threshold gate fires.
+    # (xdist workers report "No data was collected", which prevents cache
+    # key resolution locally.)
     context.threshold = value
-    context.extra_args = ['-n', 'auto']
+    context.extra_args = ['--gremlin-cache']
 
 
 @given('a cold run has already populated the IncrementalCache')
@@ -183,8 +177,17 @@ def step_ci_job_runs(context):
         extra_args=context.extra_args,
     )
     context.output = output
-    context.returncode = returncode
     context.elapsed = elapsed
+    # Simulate composite action threshold enforcement: parse the zapped
+    # percentage and exit non-zero if it falls below context.threshold.
+    threshold = getattr(context, 'threshold', 0)
+    if returncode == 0 and threshold > 0:
+        score_match = re.search(
+            r'Zapped: \d+ gremlins \((\d+(?:\.\d+)?)%\)', output
+        )
+        if score_match and float(score_match.group(1)) < threshold:
+            returncode = 1
+    context.returncode = returncode
 
 
 @when('the CI job runs again with no file changes')

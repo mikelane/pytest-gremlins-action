@@ -1,0 +1,105 @@
+name: pytest-gremlins
+description: >
+  Run pytest-gremlins mutation testing in GitHub Actions with optional
+  parallelism, incremental caching, and a mutation-score threshold gate.
+
+branding:
+  icon: zap
+  color: yellow
+
+inputs:
+  parallel:
+    description: >
+      Enable parallel gremlin evaluation via pytest-xdist (-n auto).
+      Set to 'false' to run sequentially.
+    required: false
+    default: 'true'
+  cache:
+    description: >
+      Enable IncrementalCache so unchanged gremlins are skipped on
+      subsequent runs.  Requires actions/cache to be available.
+    required: false
+    default: 'true'
+  threshold:
+    description: >
+      Minimum mutation score (0–100) required for the step to succeed.
+      The step exits non-zero when the score falls below this value.
+    required: false
+    default: '0'
+  args:
+    description: Additional arguments forwarded verbatim to pytest.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Restore IncrementalCache
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: .gremlins_cache
+        key: >-
+          gremlins-${{ runner.os }}-${{ env.pythonLocation }}-${{
+            hashFiles('**/*.py', 'pyproject.toml', 'setup.cfg', 'setup.py')
+          }}
+        restore-keys: |
+          gremlins-${{ runner.os }}-${{ env.pythonLocation }}-
+
+    - name: Run mutation tests
+      id: gremlins
+      shell: bash
+      run: |
+        EXTRA_ARGS=""
+        if [ "${{ inputs.parallel }}" = "true" ]; then
+          EXTRA_ARGS="$EXTRA_ARGS -n auto"
+        fi
+        if [ "${{ inputs.cache }}" = "true" ]; then
+          EXTRA_ARGS="$EXTRA_ARGS --gremlin-cache"
+        fi
+        python -m pytest --gremlins $EXTRA_ARGS ${{ inputs.args }} \
+          2>&1 | tee /tmp/gremlins-output.txt
+        PYTEST_EXIT=${PIPESTATUS[0]}
+
+        # Parse mutation score from "Zapped: N gremlins (XX%)" line
+        SCORE=$(python3 -c "
+        import re, sys
+        m = re.search(
+            r'Zapped: \d+ gremlins \((\d+(?:\.\d+)?)%\)',
+            open('/tmp/gremlins-output.txt').read()
+        )
+        print(m.group(1) if m else '0')
+        " 2>/dev/null || echo "0")
+
+        echo "mutation-score=$SCORE" >> "$GITHUB_OUTPUT"
+        echo "pytest-gremlins: Mutation score: ${SCORE}%"
+
+        # Enforce threshold gate
+        THRESHOLD="${{ inputs.threshold }}"
+        if [ "$THRESHOLD" != "0" ]; then
+          BELOW=$(python3 -c "
+        import sys
+        sys.exit(0 if float('$SCORE') >= float('$THRESHOLD') else 1)
+          " 2>/dev/null; echo $?)
+          if [ "$BELOW" = "1" ]; then
+            echo "Mutation score ${SCORE}% is below threshold ${THRESHOLD}%"
+            exit 1
+          fi
+        fi
+
+        exit $PYTEST_EXIT
+
+    - name: Save IncrementalCache
+      if: inputs.cache == 'true' && always()
+      uses: actions/cache@v4
+      with:
+        path: .gremlins_cache
+        key: >-
+          gremlins-${{ runner.os }}-${{ env.pythonLocation }}-${{
+            hashFiles('**/*.py', 'pyproject.toml', 'setup.cfg', 'setup.py')
+          }}
+
+outputs:
+  mutation-score:
+    description: The mutation score percentage as a numeric string (e.g. "100.0").
+    value: ${{ steps.gremlins.outputs.mutation-score }}
