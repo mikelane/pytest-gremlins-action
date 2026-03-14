@@ -19,7 +19,7 @@ Location: `spike-fixture/` in this branch.
 | Source files | `mathlib.py` — 3 functions (add, multiply, is_positive) |
 | Test file | `tests/test_mathlib.py` — 5 tests |
 | Total gremlins | **9** |
-| Parallelism observable | Yes — `Starting parallel execution with 2 workers` confirmed with `--gremlin-workers=2` |
+| Parallelism observable | Yes — `Starting parallel execution with 12 workers` seen with `-n auto` on a 12-core machine |
 
 ## Findings
 
@@ -30,14 +30,9 @@ This is the critical pattern: cache must save even when threshold check fails (n
 
 ### Q2: xdist compatibility — re-validated on Python 3.12 with v1.5.0b8
 
-**Updated decision:** The original spike ran on Python 3.14, which has a separate
-incompatibility with `OperatorRegistry`. That bug masked the real xdist behavior.
-On Python 3.12 + v1.5.0b8, `pytest --gremlins -n 2` works correctly:
+**Revised decision:** The original incompatibility finding was against stable (≤1.4.x). v1.5.0 ships two-phase xdist integration, so `pytest --gremlins -n auto` works: xdist distributes the unit tests across workers in Phase 1, then pytest-gremlins runs mutation evaluation using the same worker count (via `ProcessPoolExecutor`) in Phase 2. All 9 fixture gremlins were zapped correctly.
 
-```
-Zapped: 9 gremlins (100%)
-Survived: 0 gremlins (0%)
-```
+Since the action targets pytest-gremlins ≥ 1.5.0, the incompatibility simply isn't there. The `parallel` input therefore maps to `-n auto`; callers need `pytest-xdist` installed. Setting `parallel: 'false'` drops the flag entirely and runs single-process.
 
 Validated with: Python 3.12.12, pytest-gremlins 1.5.0b8, pytest-xdist 3.8.0, pytest-cov 7.0.0.
 
@@ -45,11 +40,6 @@ Validated with: Python 3.12.12, pytest-gremlins 1.5.0b8, pytest-xdist 3.8.0, pyt
 it pytest exits code 4 (usage error), which pytest-gremlins maps to ERROR status. The
 spike fixture does not declare `pytest-cov` as a dependency — the action's README must
 document this requirement.
-
-**Action design:** Keep `--gremlin-workers` as the parallelism input. It is the
-pytest-gremlins native mechanism and avoids xdist's test-collection distribution, which
-is orthogonal to mutation parallelism. Both work, but `--gremlin-workers` is the
-documented interface.
 
 Parallelism output format: `pytest-gremlins: Starting parallel execution with N workers`
 followed by progress lines. BDD scenario should match this string.
@@ -88,11 +78,7 @@ Survived: 0 gremlins (0%)
 ============================== 5 passed in 2.97s ===============================
 ```
 
-**Finding (Q1):** `pytest --gremlins -n auto` works. xdist distributes the 5 unit tests
-across workers; pytest-gremlins then runs its own parallel mutation phase (`12 workers`
-matched the machine's CPU count). On a 2-core GitHub-hosted `ubuntu-latest` runner, `-n auto` resolves to 2 workers; the feature file's `value > 1` assertion holds on all runners with ≥ 2 cores. All 9 gremlins zapped. Exit code 0. The action's
-`--gremlin-workers` input remains the documented interface, but `-n auto` is confirmed
-compatible for callers who pass it via `args:`.
+**Finding (Q1):** `pytest --gremlins -n auto` works. xdist distributes the 5 unit tests across workers; pytest-gremlins then runs its own parallel mutation phase (12 workers, matching the machine's CPU count). On a 2-core GitHub-hosted `ubuntu-latest` runner, `-n auto` resolves to 2 workers, so the feature file's `value > 1` assertion holds on any runner with at least 2 cores. All 9 gremlins zapped, exit code 0.
 
 ### Q3: `actions/cache` permissions
 **Design decision — not empirically validated by a CI run during the spike. Validate in BDD Bootstrap.**
@@ -113,12 +99,14 @@ This is the standard convention for GitHub Actions major versions. Users pin to 
 and automatically get patch/minor updates.
 
 ### Q5: Source path discovery
-**Decision:** pytest-gremlins does NOT auto-discover flat-layout source files (e.g., `mathlib.py`
-at project root). It looks for: `--gremlin-targets` CLI option, `[tool.pytest-gremlins] paths`
-in pyproject.toml, `[tool.setuptools]` package config, or a `src/` directory.
+v1.5.0b4 added three discovery strategies — `project-name`, `setup.cfg`, and `importlib` — so installed packages and conventionally named source directories are found automatically. The spike fixture doesn't fit either case: `mathlib.py` is a flat-layout file whose name doesn't match the project (`spike-fixture`), so it still needs explicit config:
 
-The spike fixture uses `[tool.pytest-gremlins] paths = ["mathlib.py"]` in pyproject.toml.
-The action's README must document this requirement for callers whose source is not in `src/`.
+```toml
+[tool.pytest-gremlins]
+paths = ["mathlib.py"]
+```
+
+The action README should call this out for callers with non-conventional layouts.
 
 ### Q6: `cache: write` permission absent behavior
 **Decision:** Warn and continue. The action emits `::warning::` and proceeds without
@@ -131,13 +119,12 @@ failing fast: the user can debug permissions separately without blocking CI.
 The BDD Bootstrap scenario "All mutants are evaluated" must assert this exact count.
 
 ### Q8: Parallelism observation
-With `--gremlin-workers=2`, output includes:
+With `-n auto` on a 12-core machine, the output includes:
 ```
-pytest-gremlins: Starting parallel execution with 2 workers
+pytest-gremlins: Starting parallel execution with 12 workers
 pytest-gremlins: Progress 1/9 ... Progress 9/9
 ```
-The BDD scenario "Parallelism is active" asserts a line matching
-`Starting parallel execution with \d+ workers` with value > 1.
+On a 2-core `ubuntu-latest` runner this will show 2 workers. The BDD scenario "Parallelism is active" should match `Starting parallel execution with \d+ workers` and check that the count is greater than 1, which holds on any multi-core runner.
 
 ### Q9: `if: always()` in composite actions
 **Design decision — not empirically validated by a CI run during the spike. Validate in BDD Bootstrap.**
@@ -232,19 +219,12 @@ verify this degrades gracefully rather than silently loading incompatible cache 
 |----------|----------|
 | `cache: write` absent: warn or fail? | Warn and continue |
 | `@v1` tag lifecycle: mutable or static? | Mutable floating tag |
-| xdist `-n auto` for parallelism? | Works on Python 3.12 + b8, but keep `--gremlin-workers` (native mechanism) |
+| xdist `-n auto` for parallelism? | Works on Python 3.12 + b8; `parallel: 'true'` maps to `-n auto` (xdist) |
 | Source auto-discovery for flat layout? | Requires `[tool.pytest-gremlins] paths` or `--gremlin-targets` |
 
 ## Recommended BDD Scenarios
 
-The 7 Gherkin scenarios in the epic body (mikelane/pytest-gremlins#305) require updates
-based on spike findings:
-
-- **Mutant count assertion**: 9 (exact, from Q7)
-- **Worker pattern**: `Starting parallel execution with \d+ workers` in output, value > 1
-- **Parallelism input**: `workers: '2'` (maps to `--gremlin-workers=2`), NOT `parallel: 'true'`
-- **Cache presence assertion**: `actions/cache` restore step returning HIT
-- **Source discovery**: caller's pyproject.toml must configure `[tool.pytest-gremlins] paths`
+The 7 Gherkin scenarios in the epic body (mikelane/pytest-gremlins#305) need a few updates based on what the spike found. Mutant count is 9 — assert that exactly. The parallelism scenario should match the log line `Starting parallel execution with \d+ workers` and check the count is greater than 1; on any multi-core runner that holds. The input to exercise is `parallel: 'true'`, which passes `-n auto` to pytest (callers must have `pytest-xdist` installed). The cache scenario should confirm the `actions/cache` restore step returns a HIT on the second run. Source discovery scenarios should set `[tool.pytest-gremlins] paths` in the fixture's pyproject.toml — auto-discovery won't find flat-layout files unless the module name matches the project name.
 
 ## Separate Finding: Python 3.14 OperatorRegistry Bug
 
@@ -262,5 +242,5 @@ missing `pytest-cov` masking a clean run.
 - [x] `spike-fixture/` committed (canonical fixture with known mutant count: 9)
 - [x] `docs/spikes/spike-3-actions-marketplace.md` (this document)
 - [x] Q1–Q9 answered with decisions
-- [x] xdist incompatibility discovered and documented (critical design correction)
-- [x] Initial test harness scaffold — `features/`, behave runner, CI job stub (`.github/workflows/test.yml`)
+- [x] xdist compatibility re-validated against v1.5.0b8 — works; Q2 reversed
+- [x] BDD scaffold — `features/action_behavior.feature` (7 scenarios, 6 `@pending`), `features/environment.py`, `features/steps/pending_steps.py`, `.github/workflows/test.yml`; `behave --dry-run` exits 0

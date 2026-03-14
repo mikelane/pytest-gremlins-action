@@ -1,3 +1,4 @@
+# Requires pytest-gremlins >= 1.5.0 and pytest-xdist (when parallel: 'true')
 name: 'pytest-gremlins'
 description: 'Run mutation testing with pytest-gremlins — parallel workers, incremental cache, threshold enforcement'
 author: 'mikelane'
@@ -7,10 +8,10 @@ branding:
   color: 'green'
 
 inputs:
-  workers:
-    description: 'Number of parallel gremlin workers (--gremlin-workers=N). Use "auto" to match CPU count.'
+  parallel:
+    description: "Distribute tests across workers via pytest-xdist (-n auto). Requires pytest-xdist. Set to 'false' for single-process runs."
     required: false
-    default: 'auto'
+    default: 'true'
   cache:
     description: 'Enable IncrementalCache via actions/cache'
     required: false
@@ -45,15 +46,15 @@ runs:
       id: run-gremlins
       shell: bash
       run: |
-        WORKERS_ARGS=""
-        if [ "${{ inputs.workers }}" != "0" ] && [ -n "${{ inputs.workers }}" ]; then
-          WORKERS_ARGS="--gremlin-workers=${{ inputs.workers }}"
+        PARALLEL_ARGS=""
+        if [ "${{ inputs.parallel }}" != "false" ]; then
+          PARALLEL_ARGS="-n auto"
         fi
         THRESHOLD_ARGS=""
         if [ "${{ inputs.threshold }}" != "0" ]; then
           THRESHOLD_ARGS="--gremlin-threshold ${{ inputs.threshold }}"
         fi
-        pytest --gremlins $WORKERS_ARGS $THRESHOLD_ARGS ${{ inputs.args }}
+        pytest --gremlins $PARALLEL_ARGS $THRESHOLD_ARGS ${{ inputs.args }}
 
     - name: Save gremlins cache
       id: cache-save
