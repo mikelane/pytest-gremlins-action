@@ -90,7 +90,7 @@ Survived: 0 gremlins (0%)
 
 **Finding (Q1):** `pytest --gremlins -n auto` works. xdist distributes the 5 unit tests
 across workers; pytest-gremlins then runs its own parallel mutation phase (`12 workers`
-matched the machine's CPU count). All 9 gremlins zapped. Exit code 0. The action's
+matched the machine's CPU count). On a 2-core GitHub-hosted `ubuntu-latest` runner, `-n auto` resolves to 2 workers; the feature file's `value > 1` assertion holds on all runners with ≥ 2 cores. All 9 gremlins zapped. Exit code 0. The action's
 `--gremlin-workers` input remains the documented interface, but `-n auto` is confirmed
 compatible for callers who pass it via `args:`.
 
@@ -168,9 +168,17 @@ This is reproducible within a single CI job and requires no external pre-seeding
 **Run B empirical finding:** Both runs produced identical output line-for-line. There is
 no distinctive log line such as "cached" or "skipped" in the second run. The only
 observable difference is wall-clock time: cold run 8.17s, warm run 3.55s (57% faster).
-The BDD step for "warm cache skips unchanged gremlins" must therefore assert timing, not
-log content — for example, assert the second run completes in under half the time of the
-first. Run B verbatim outputs:
+The BDD step for "warm cache skips unchanged gremlins" must assert timing, not log content.
+The observed ratio was 43% (3.55s warm / 8.17s cold), but a < 50% threshold is too tight for CI:
+loaded `ubuntu-latest` runners vary by ±20–30%, which can narrow the ratio and flip the assertion.
+
+Recommended BDD Bootstrap approach: assert `warm_time < 0.70 * cold_time` (warm must be at
+least 30% faster than cold). This gives an 18-point buffer above the observed ratio. Alternatively,
+tag the warm-cache scenario `@slow` and mark it non-blocking in CI — acceptable if timing variance
+is unpredictable at the 9-gremlin fixture size. A larger fixture (30+ gremlins) would widen the
+timing gap and make a tighter threshold reliable.
+
+Run B verbatim outputs:
 
 **First run (cold — `.gremlins_cache/` absent):**
 ```
@@ -211,9 +219,12 @@ runs in one job is deterministic and self-contained.
 ### Matrix cache key scoping
 
 **Decision:** Cache key includes `${{ env.pythonLocation }}` (set by `actions/setup-python`)
-to prevent cross-Python-version cache collisions in matrix jobs. Falls back to OS-only
-scope via `restore-keys` when `pythonLocation` is unset (callers who skip `actions/setup-python`
-still get a warm cache rather than a miss).
+to prevent cross-Python-version cache collisions in matrix jobs. When `pythonLocation` is unset (caller skipped `actions/setup-python`), the restore-key
+`gremlins-${{ runner.os }}-${{ env.pythonLocation }}-` expands to `gremlins-ubuntu-latest--`
+and matches any cache entry for that OS regardless of Python version — effectively OS-only scope.
+This is an accepted trade-off: callers who manage their own Python setup get a warm cache hit
+(possibly from a different Python version) rather than a cold miss. The BDD Bootstrap should
+verify this degrades gracefully rather than silently loading incompatible cache content.
 
 ## Open Questions Resolved
 
