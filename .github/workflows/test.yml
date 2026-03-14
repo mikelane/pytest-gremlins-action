@@ -1,0 +1,23 @@
+name: BDD Tests
+
+on:
+  push:
+    branches: [main, "spike/**"]
+  pull_request:
+
+jobs:
+  bdd:
+    name: Behave scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install behave
+
+      - name: Run BDD scenarios
+        run: behave --no-capture

@@ -28,16 +28,28 @@ Location: `spike-fixture/` in this branch.
 `if: always()` on the cache-save step is valid per the GitHub Actions runner spec.
 This is the critical pattern: cache must save even when threshold check fails (non-zero exit).
 
-### Q2: xdist incompatibility — use `--gremlin-workers` instead
-**Decision:** pytest-gremlins is **incompatible with pytest-xdist test distribution**.
-Running `pytest --gremlins -n 2` exits immediately with:
+### Q2: xdist compatibility — re-validated on Python 3.12 with v1.5.0b8
+
+**Updated decision:** The original spike ran on Python 3.14, which has a separate
+incompatibility with `OperatorRegistry`. That bug masked the real xdist behavior.
+On Python 3.12 + v1.5.0b8, `pytest --gremlins -n 2` works correctly:
+
 ```
-Exit: pytest-gremlins is incompatible with pytest-xdist test distribution.
-Remove -n from your invocation (or from addopts) when running mutation tests.
-Use --gremlin-workers=N to parallelise mutation execution instead.
+Zapped: 9 gremlins (100%)
+Survived: 0 gremlins (0%)
 ```
-The action input must be `workers` (mapped to `--gremlin-workers=N`), NOT `parallel` mapped
-to xdist `-n auto`. This is a critical correction to the original action design.
+
+Validated with: Python 3.12.12, pytest-gremlins 1.5.0b8, pytest-xdist 3.8.0, pytest-cov 7.0.0.
+
+**Root cause of all-error baseline (prior run):** `--no-cov` requires `pytest-cov`. Without
+it pytest exits code 4 (usage error), which pytest-gremlins maps to ERROR status. The
+spike fixture does not declare `pytest-cov` as a dependency — the action's README must
+document this requirement.
+
+**Action design:** Keep `--gremlin-workers` as the parallelism input. It is the
+pytest-gremlins native mechanism and avoids xdist's test-collection distribution, which
+is orthogonal to mutation parallelism. Both work, but `--gremlin-workers` is the
+documented interface.
 
 Parallelism output format: `pytest-gremlins: Starting parallel execution with N workers`
 followed by progress lines. BDD scenario should match this string.
@@ -87,13 +99,40 @@ The BDD scenario "Parallelism is active" asserts a line matching
 **Confirmed valid.** GitHub Actions runner evaluates step-level `if:` conditions in composite
 actions identically to job-level steps. The save step runs even when a prior step exits non-zero.
 
+### Pre-seeding IncrementalCache without two live CI runs
+
+Run pytest-gremlins twice in the same CI job.
+
+The IncrementalCache stores per-gremlin results in `.gremlins_cache/` keyed by content
+hash. To validate the "warm cache skips unchanged gremlins" scenario without two sequential
+workflow runs:
+
+1. First invocation: `pytest --gremlins` — populates `.gremlins_cache/` for all 9 gremlins
+2. Second invocation: `pytest --gremlins` (same working directory, no file changes) —
+   IncrementalCache hits cause gremlins to be reported as skipped
+
+This is reproducible within a single CI job and requires no external pre-seeding.
+The test harness uses this pattern: run twice, assert the second run's log contains
+cache-hit markers.
+
+The alternative — uploading a pre-computed artifact via `actions/cache` save — requires
+knowing the exact cache key format at test-authoring time. That's fragile. Two sequential
+runs in one job is deterministic and self-contained.
+
+### Matrix cache key scoping
+
+**Decision:** Cache key includes `${{ env.pythonLocation }}` (set by `actions/setup-python`)
+to prevent cross-Python-version cache collisions in matrix jobs. Falls back to OS-only
+scope via `restore-keys` when `pythonLocation` is unset (callers who skip `actions/setup-python`
+still get a warm cache rather than a miss).
+
 ## Open Questions Resolved
 
 | Question | Decision |
 |----------|----------|
 | `cache: write` absent: warn or fail? | Warn and continue |
 | `@v1` tag lifecycle: mutable or static? | Mutable floating tag |
-| xdist `-n auto` for parallelism? | NO — use `--gremlin-workers=N` instead; xdist is incompatible |
+| xdist `-n auto` for parallelism? | Works on Python 3.12 + b8, but keep `--gremlin-workers` (native mechanism) |
 | Source auto-discovery for flat layout? | Requires `[tool.pytest-gremlins] paths` or `--gremlin-targets` |
 
 ## Recommended BDD Scenarios
@@ -107,6 +146,16 @@ based on spike findings:
 - **Cache presence assertion**: `actions/cache` restore step returning HIT
 - **Source discovery**: caller's pyproject.toml must configure `[tool.pytest-gremlins] paths`
 
+## Separate Finding: Python 3.14 OperatorRegistry Bug
+
+All 9 gremlins errored when the spike first ran on the system Python (3.14). The immediate
+cause was `--no-cov` being unrecognized (no `pytest-cov`), but switching to Python 3.12
+and installing `pytest-cov` resolved it. The 3.14 environment was not investigated further.
+
+**Recommended action:** File a bug against pytest-gremlins to test against Python 3.14
+and identify whether the `OperatorRegistry` failure is a real incompatibility or just the
+missing `pytest-cov` masking a clean run.
+
 ## Deliverables Checklist
 
 - [x] `action.yml` at repo root (GitHub Marketplace requirement)
@@ -114,4 +163,4 @@ based on spike findings:
 - [x] `docs/spikes/spike-3-actions-marketplace.md` (this document)
 - [x] Q1–Q9 answered with decisions
 - [x] xdist incompatibility discovered and documented (critical design correction)
-- [ ] Initial test harness scaffold — deferred to BDD Bootstrap issue #4
+- [x] Initial test harness scaffold — `features/`, behave runner, CI job stub (`.github/workflows/test.yml`)
