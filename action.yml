@@ -27,7 +27,7 @@ inputs:
 
 outputs:
   mutation-score:
-    description: 'Mutation score percentage (0–100)'
+    description: 'The mutation score as a percentage (0-100). Stub — score capture not yet implemented; deferred to BDD Bootstrap.'
     value: ${{ steps.run-gremlins.outputs.score }}
 
 runs:

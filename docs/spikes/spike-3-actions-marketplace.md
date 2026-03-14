@@ -221,6 +221,9 @@ verify this degrades gracefully rather than silently loading incompatible cache 
 | `@v1` tag lifecycle: mutable or static? | Mutable floating tag |
 | xdist `-n auto` for parallelism? | Works on Python 3.12 + b8; `parallel: 'true'` maps to `-n auto` (xdist) |
 | Source auto-discovery for flat layout? | Requires `[tool.pytest-gremlins] paths` or `--gremlin-targets` |
+| Canonical fixture mutant count? | 9 |
+| Parallelism log format? | `Starting parallel execution with \d+ workers`; BDD scenario asserts count > 1 |
+| `if: always()` ordering? | `always()` must be first — `if: always() && inputs.cache == 'true'`; deferred to BDD Bootstrap for live validation |
 
 ## Recommended BDD Scenarios
 
@@ -238,9 +241,9 @@ missing `pytest-cov` masking a clean run.
 
 ## Deliverables Checklist
 
-- [x] `action.yml` at repo root (GitHub Marketplace requirement)
+- [x] `action.yml` at repo root (GitHub Marketplace requirement) — `mutation-score` output is a scaffold stub; score capture deferred to BDD Bootstrap
 - [x] `spike-fixture/` committed (canonical fixture with known mutant count: 9)
 - [x] `docs/spikes/spike-3-actions-marketplace.md` (this document)
 - [x] Q1–Q9 answered with decisions
 - [x] xdist compatibility re-validated against v1.5.0b8 — works; Q2 reversed
-- [x] BDD scaffold — `features/action_behavior.feature` (7 scenarios, 6 `@pending`), `features/environment.py`, `features/steps/pending_steps.py`, `.github/workflows/test.yml`; `behave --dry-run` exits 0
+- [x] BDD scaffold — `features/action_behavior.feature` (7 scenarios, all 7 `@pending`), `features/environment.py`, `features/steps/pending_steps.py`, `.github/workflows/test.yml`; `behave --dry-run` exits 0
