@@ -4,7 +4,7 @@ Feature: pytest-gremlins GitHub Actions composite action
     Given the canonical fixture project with 9 gremlins
     And a workflow using `uses: mikelane/pytest-gremlins-action@v1`
 
-  Scenario: All mutants are evaluated with no extra configuration
+  Scenario: All gremlins are evaluated with no extra configuration
     And the workflow has no extra inputs
     When the CI job runs
     Then all 9 fixture gremlins are evaluated
@@ -20,7 +20,7 @@ Feature: pytest-gremlins GitHub Actions composite action
   Scenario: Cache is saved when threshold failure occurs
     And the workflow has a threshold of 101
     When the CI job runs
-    Then the job exits non-zero
+    Then the step exits non-zero
     And the IncrementalCache directory is present after the run
 
   Scenario: Warm cache skips unchanged gremlins on the next run
@@ -28,18 +28,17 @@ Feature: pytest-gremlins GitHub Actions composite action
     When the CI job runs again with no file changes
     Then the warm run reports at least 1 cache hit
 
-  Scenario: Opt-out parallelism
+  Scenario: Parallel execution is disabled when parallel is set to false
     And the workflow has `parallel: 'false'`
     When the CI job runs
     Then the step log does not contain "Starting parallel execution with"
 
-  Scenario: Opt-out caching
+  Scenario: IncrementalCache is not written when cache is set to false
     And the workflow has `cache: 'false'`
     When the CI job runs
     Then the IncrementalCache directory is absent after the run
 
-  Scenario: Threshold enforcement
+  Scenario: Step exits non-zero when mutation score falls below the threshold
     And the workflow has a threshold of 101
     When the mutation phase completes
     Then the step exits non-zero
-    And the job is marked failed

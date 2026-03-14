@@ -25,6 +25,22 @@ from behave import given, when, then
 # ---------------------------------------------------------------------------
 
 _FIXTURE_INCLUDES = ('mathlib.py', 'pyproject.toml', 'tests')
+_CACHE_DIR_NAME = '.gremlins_cache'
+
+# Allowlist of environment keys passed to the pytest subprocess.
+# Avoids leaking CI secrets (GITHUB_TOKEN, AWS_*, etc.) into the child process.
+_SUBPROCESS_ENV_KEYS = {
+    'PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP',
+    'PYTHONPATH', 'VIRTUAL_ENV',
+    'PYTHONDONTWRITEBYTECODE', 'PYTHONIOENCODING',
+    'LANG', 'LC_ALL', 'LC_CTYPE',
+    'USER', 'LOGNAME',
+}
+
+
+def _cache_dir(context):
+    """Return the expected IncrementalCache directory path for the current scenario."""
+    return os.path.join(context.fixture_dir, _CACHE_DIR_NAME)
 
 
 def _copy_fixture(context):
@@ -39,18 +55,25 @@ def _copy_fixture(context):
     for name in _FIXTURE_INCLUDES:
         src = os.path.join(context.fixture_src, name)
         dst = os.path.join(dest, name)
-        if os.path.isdir(src):
-            shutil.copytree(src, dst)
-        else:
-            shutil.copy2(src, dst)
+        try:
+            if os.path.isdir(src):
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+        except OSError as exc:
+            raise RuntimeError(
+                f'[pga-bdd] Failed to copy fixture item {name!r} '
+                f'from {src!r} to {dst!r}: {exc}'
+            ) from exc
     return dest
 
 
 def _run_pytest_gremlins(fixture_dir, extra_args=None, env_overrides=None):
-    """Run pytest --gremlins against fixture_dir and return (output, returncode, elapsed).
+    """Run pytest --gremlins against fixture_dir and return (combined_output, returncode, elapsed).
 
     Passes fixture_dir as both --rootdir and the positional test path so pytest
     picks up pyproject.toml as its ini file regardless of the caller's cwd.
+    Uses an environment allowlist to avoid leaking CI secrets into the subprocess.
     """
     cmd = [
         sys.executable, '-m', 'pytest',
@@ -58,20 +81,21 @@ def _run_pytest_gremlins(fixture_dir, extra_args=None, env_overrides=None):
         f'--rootdir={fixture_dir}',
         fixture_dir,
     ] + (extra_args or [])
-    env = os.environ.copy()
+    env = {k: v for k, v in os.environ.items() if k in _SUBPROCESS_ENV_KEYS}
     if env_overrides:
         env.update(env_overrides)
-    t0 = time.monotonic()
-    result = subprocess.run(
+    start_time = time.monotonic()
+    process_result = subprocess.run(
         cmd,
         cwd=fixture_dir,
         capture_output=True,
         text=True,
         env=env,
+        timeout=120,
     )
-    elapsed = time.monotonic() - t0
-    output = result.stdout + result.stderr
-    return output, result.returncode, elapsed
+    elapsed = time.monotonic() - start_time
+    combined_output = process_result.stdout + '\n' + process_result.stderr
+    return combined_output, process_result.returncode, elapsed
 
 
 # ---------------------------------------------------------------------------
@@ -86,11 +110,9 @@ def step_fixture_with_count(context, count):
 
 @given('a workflow using `uses: mikelane/pytest-gremlins-action@v1`')
 def step_workflow_uses_action(context):
-    # Records that we are simulating the action's behaviour locally.
+    # Seed extra_args; each scenario-level Given step overwrites it to match
+    # the specific action inputs under test.
     context.extra_args = []
-    context.threshold = None
-    context.parallel = True
-    context.cache = False
 
 
 @given('the workflow has no extra inputs')
@@ -102,27 +124,37 @@ def step_workflow_no_extra_inputs(context):
 
 @given('the workflow has a threshold of {value:d}')
 def step_workflow_threshold(context, value):
-    context.threshold = value
     # pytest-gremlins has no --gremlin-threshold flag — threshold enforcement
-    # is composite action logic, not a pytest flag.  Run with caching so the
-    # cache-presence assertion can be checked after the threshold step; the
-    # red-phase failure is that pytest exits 0 (100% score) because the action
-    # has not yet implemented the score-vs-threshold comparison and non-zero exit.
-    context.extra_args = ['-n', 'auto', '--gremlin-cache']
+    # is composite action logic, not a pytest flag.  Store the threshold value
+    # for use in assertion messages.
+    #
+    # Do NOT add --gremlin-cache here.  This Given step is shared by two
+    # scenarios:
+    #   "Cache is saved when threshold failure occurs" — the cold-run Given
+    #     that follows adds --gremlin-cache explicitly via its own append.
+    #   "Threshold enforcement" — only tests exit code; adding --gremlin-cache
+    #     when the flag is unimplemented causes pytest to exit non-zero for the
+    #     wrong reason (unknown flag), masking the real threshold logic failure.
+    context.threshold = value
+    context.extra_args = ['-n', 'auto']
 
 
 @given('a cold run has already populated the IncrementalCache')
 def step_cold_run_populated_cache(context):
+    # Merge context.extra_args so the cold run respects the action's parallelism
+    # setting, then force-add --gremlin-cache (cache is the point of this step).
+    extra = list(context.extra_args)
+    if '--gremlin-cache' not in extra:
+        extra.append('--gremlin-cache')
     output, returncode, elapsed = _run_pytest_gremlins(
         context.fixture_dir,
-        extra_args=['-n', 'auto', '--gremlin-cache'],
+        extra_args=extra,
     )
     context.cold_output = output
     context.cold_elapsed = elapsed
     assert returncode == 0, f'Cold run failed (exit {returncode}):\n{output}'
-    cache_dir = os.path.join(context.fixture_dir, '.gremlins_cache')
-    assert os.path.isdir(cache_dir), (
-        f'Cold run did not create .gremlins_cache at {cache_dir}'
+    assert os.path.isdir(_cache_dir(context)), (
+        f'Cold run did not create {_CACHE_DIR_NAME} at {_cache_dir(context)}'
     )
 
 
@@ -133,6 +165,10 @@ def step_workflow_parallel_false(context):
 
 @given("the workflow has `cache: 'false'`")
 def step_workflow_cache_false(context):
+    # Note: this step verifies baseline absence (no --gremlin-cache → no cache dir).
+    # It cannot prove active suppression because the composite action doesn't
+    # exist yet. The GREEN phase will need to confirm the action omits the flag
+    # when cache=false, not just that the flag is absent here.
     context.extra_args = ['-n', 'auto']  # xdist but cache NOT enabled
 
 
@@ -153,9 +189,14 @@ def step_ci_job_runs(context):
 
 @when('the CI job runs again with no file changes')
 def step_ci_job_runs_again(context):
+    # Merge context.extra_args so the warm run uses the same parallelism
+    # setting as the cold run, then force-add --gremlin-cache.
+    extra = list(context.extra_args)
+    if '--gremlin-cache' not in extra:
+        extra.append('--gremlin-cache')
     output, returncode, elapsed = _run_pytest_gremlins(
         context.fixture_dir,
-        extra_args=['-n', 'auto', '--gremlin-cache'],
+        extra_args=extra,
     )
     context.warm_output = output
     context.warm_returncode = returncode
@@ -164,13 +205,11 @@ def step_ci_job_runs_again(context):
 
 @when('the mutation phase completes')
 def step_mutation_phase_completes(context):
-    output, returncode, elapsed = _run_pytest_gremlins(
-        context.fixture_dir,
-        extra_args=context.extra_args,
-    )
-    context.output = output
-    context.returncode = returncode
-    context.elapsed = elapsed
+    # Locally "mutation phase completes" and "CI job runs" invoke the same
+    # subprocess — the distinction matters in the composite action (where the
+    # mutation phase is a discrete step), but both resolve to the same pytest
+    # invocation in this simulation.
+    step_ci_job_runs(context)
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +235,6 @@ def step_log_includes_zapped(context, count):
 
 @then('the step log includes a mutation score summary')
 def step_log_includes_score_summary(context):
-    # The summary block always contains the separator line and Zapped/Survived.
     assert 'pytest-gremlins mutation report' in context.output, (
         f'Expected mutation report header in output but got:\n{context.output}'
     )
@@ -204,8 +242,8 @@ def step_log_includes_score_summary(context):
 
 @then('the step log contains a line matching "Starting parallel execution with {pattern} workers"')
 def step_log_contains_parallel_line(context, pattern):
-    # The actual output uses "auto" not a digit count, so this assertion will
-    # fail in the red phase: the regex \d+ does not match "auto".
+    # In the red phase pytest-gremlins 1.5.0 resolves xdist workers but the
+    # output uses "N workers" where N is numeric — this step should PASS green.
     full_pattern = rf'Starting parallel execution with {pattern} workers'
     assert re.search(full_pattern, context.output), (
         f'Expected line matching r"{full_pattern}" in output but got:\n{context.output}'
@@ -214,20 +252,18 @@ def step_log_contains_parallel_line(context, pattern):
 
 @then('the worker count is greater than 1')
 def step_worker_count_greater_than_one(context):
-    # Requires the parallel line to expose a numeric worker count.
-    # pytest-gremlins 1.4.0 prints "auto" not a number — this step will fail
-    # in the red phase until the plugin surfaces the resolved count.
     match = re.search(r'Starting parallel execution with (\d+) workers', context.output)
     assert match, (
         f'Could not find numeric worker count in output:\n{context.output}'
     )
-    assert int(match.group(1)) > 1, (
-        f'Worker count {match.group(1)} is not greater than 1'
+    worker_count = int(match.group(1))
+    assert worker_count > 1, (
+        f'Expected worker count > 1 for parallel execution, but got {worker_count}.'
     )
 
 
-@then('the job exits non-zero')
-def step_job_exits_nonzero(context):
+@then('the step exits non-zero')
+def step_exits_nonzero(context):
     assert context.returncode != 0, (
         f'Expected non-zero exit code but got {context.returncode}.\nOutput:\n{context.output}'
     )
@@ -235,9 +271,16 @@ def step_job_exits_nonzero(context):
 
 @then('the IncrementalCache directory is present after the run')
 def step_cache_dir_present(context):
-    cache_dir = os.path.join(context.fixture_dir, '.gremlins_cache')
-    assert os.path.isdir(cache_dir), (
-        f'Expected .gremlins_cache to exist at {cache_dir} but it was absent.'
+    cache = _cache_dir(context)
+    assert os.path.isdir(cache), (
+        f'Expected {_CACHE_DIR_NAME} to exist at {cache} but it was absent.'
+    )
+    # An empty cache directory is as useless as no cache at all — the warm-run
+    # scenario depends on entries being present.  Assert at least one entry was
+    # written so this step proves real work was cached, not just that mkdir ran.
+    entries = list(os.scandir(cache))
+    assert entries, (
+        f'Expected {_CACHE_DIR_NAME} to contain at least one entry but it was empty: {cache}'
     )
 
 
@@ -268,25 +311,6 @@ def step_log_no_parallel(context):
 
 @then('the IncrementalCache directory is absent after the run')
 def step_cache_dir_absent(context):
-    cache_dir = os.path.join(context.fixture_dir, '.gremlins_cache')
-    assert not os.path.exists(cache_dir), (
-        f'Expected .gremlins_cache to be absent at {cache_dir} but it was present.'
-    )
-
-
-@then('the step exits non-zero')
-def step_exits_nonzero(context):
-    assert context.returncode != 0, (
-        f'Expected non-zero exit code but got {context.returncode}.\nOutput:\n{context.output}'
-    )
-
-
-@then('the job is marked failed')
-def step_job_marked_failed(context):
-    # Locally "job failed" means the pytest process exited non-zero.
-    # The GitHub Actions job-level failure (red X in the UI) cannot be
-    # asserted without an Actions runner.
-    assert context.returncode != 0, (
-        f'Expected non-zero exit code (job failure) but got {context.returncode}.\n'
-        f'Output:\n{context.output}'
+    assert not os.path.exists(_cache_dir(context)), (
+        f'Expected {_CACHE_DIR_NAME} to be absent at {_cache_dir(context)} but it was present.'
     )
