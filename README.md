@@ -2,6 +2,10 @@
 
 Drop [pytest-gremlins](https://github.com/mikelane/pytest-gremlins) mutation testing into your CI pipeline in one step.
 
+## Demo
+
+[![pytest-gremlins-action demo: parallel mutation testing + score gate in one line of YAML](https://img.youtube.com/vi/ogRcq9HDTRs/maxresdefault.jpg)](https://youtu.be/ogRcq9HDTRs)
+
 ## Usage
 
 Minimal — fail the job if fewer than 80% of gremlins are zapped:
