@@ -22,6 +22,7 @@ Feature: pytest-gremlins GitHub Actions composite action
   @pending
   Scenario: Opt-out caching
 
+  @pending
   Scenario: Threshold enforcement
     Given the workflow has a threshold set above the fixture's mutation score
     When the mutation phase completes

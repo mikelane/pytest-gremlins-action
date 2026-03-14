@@ -40,7 +40,6 @@ runs:
         key: gremlins-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('**/*.py', 'pyproject.toml') }}
         restore-keys: |
           gremlins-${{ runner.os }}-${{ env.pythonLocation }}-
-          gremlins-${{ runner.os }}-
 
     - name: Run mutation tests
       id: run-gremlins
@@ -57,8 +56,15 @@ runs:
         pytest --gremlins $WORKERS_ARGS $THRESHOLD_ARGS ${{ inputs.args }}
 
     - name: Save gremlins cache
-      if: inputs.cache == 'true' && always()
+      id: cache-save
+      if: always() && inputs.cache == 'true'
+      continue-on-error: true
       uses: actions/cache/save@v4
       with:
         path: .gremlins_cache
         key: gremlins-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('**/*.py', 'pyproject.toml') }}
+
+    - name: Warn on cache save failure
+      if: always() && inputs.cache == 'true' && steps.cache-save.outcome == 'failure'
+      shell: bash
+      run: echo "::warning::pytest-gremlins-action: cache save failed (missing cache write permission?). Mutation testing will continue but the next run will start cold."
