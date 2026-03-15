@@ -35,7 +35,7 @@ BODY="${MARKER}
 | Pardoned | ${PARDONED} |
 | **Total** | **${TOTAL}** |"
 
-if [ "${SURVIVED_COUNT}" -gt 0 ]; then
+if [[ "${SURVIVED_COUNT}" -gt 0 ]]; then
   BODY="${BODY}
 
 <details>
@@ -57,16 +57,16 @@ BODY="${BODY}
 PR_NUMBER="${GITHUB_PR_NUMBER}"
 REPO="${GITHUB_REPOSITORY}"
 
-EXISTING_COMMENT_ID=$(curl -s \
+EXISTING_COMMENT_ID=$(curl -sf \
   -H "Authorization: token ${GITHUB_TOKEN}" \
   -H "Accept: application/vnd.github.v3+json" \
   "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments" \
-  | jq -r ".[] | select(.body | startswith(\"${MARKER}\")) | .id" \
+  | jq -r --arg marker "${MARKER}" '.[] | select(.body | startswith($marker)) | .id' \
   | head -1)
 
-if [ -n "${EXISTING_COMMENT_ID}" ] && [ "${EXISTING_COMMENT_ID}" != "null" ]; then
+if [[ -n "${EXISTING_COMMENT_ID}" ]] && [[ "${EXISTING_COMMENT_ID}" != "null" ]]; then
   # Update existing comment
-  curl -s -X PATCH \
+  curl -sf -X PATCH \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
     "https://api.github.com/repos/${REPO}/issues/comments/${EXISTING_COMMENT_ID}" \
@@ -74,7 +74,7 @@ if [ -n "${EXISTING_COMMENT_ID}" ] && [ "${EXISTING_COMMENT_ID}" != "null" ]; th
   echo "Updated existing PR comment"
 else
   # Create new comment
-  curl -s -X POST \
+  curl -sf -X POST \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
     "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments" \
