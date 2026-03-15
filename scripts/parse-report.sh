@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPORT="gremlin-report.json"
 
-if [ ! -f "${REPORT}" ]; then
+if [[ ! -f "${REPORT}" ]]; then
   echo "::error::gremlin-report.json not found. Did pytest-gremlins run successfully?"
   exit 1
 fi
