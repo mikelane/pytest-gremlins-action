@@ -65,13 +65,31 @@ jobs:
           pip install pytest
           pip install -e .
 
+      - name: Debug — list files before action
+        run: |
+          echo "=== Python files ==="
+          find . -name '*.py' -not -path './.git/*' | head -20
+          echo "=== pyproject.toml ==="
+          cat pyproject.toml
+          echo "=== Test calc content ==="
+          cat src/calc/__init__.py
+
       - name: Run action
         id: gremlins
         uses: ./
         with:
-          parallel: 'true'
-          cache: 'true'
+          parallel: 'false'
+          cache: 'false'
           pr-comment: 'false'
+
+      - name: Debug — list files after action
+        if: always()
+        run: |
+          echo "=== Report files ==="
+          ls -la gremlin-report.* 2>/dev/null || echo "No gremlin-report.* files found"
+          ls -la .gremlin* 2>/dev/null || echo "No .gremlin* files found"
+          echo "=== All JSON files ==="
+          find . -name '*.json' -not -path './.git/*' | head -20
 
       - name: Verify outputs exist
         env:
