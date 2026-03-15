@@ -91,3 +91,11 @@ runs:
       id: parse
       shell: bash
       run: ${{ github.action_path }}/scripts/parse-report.sh
+
+    - name: Ratchet check
+      id: ratchet
+      shell: bash
+      env:
+        INPUT_SCORE: ${{ steps.parse.outputs.score }}
+        INPUT_RATCHET_FILE: ${{ inputs.ratchet-file }}
+      run: ${{ github.action_path }}/scripts/ratchet.sh
