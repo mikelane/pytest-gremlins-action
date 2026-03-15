@@ -1,6 +1,10 @@
 # pytest-gremlins-action
 
-GitHub Actions composite action for [pytest-gremlins](https://github.com/mikelane/pytest-gremlins) mutation testing.
+Drop [pytest-gremlins](https://github.com/mikelane/pytest-gremlins) mutation testing into your CI pipeline in one step.
+
+## Demo
+
+[![pytest-gremlins-action demo: parallel mutation testing + score gate in one line of YAML](https://img.youtube.com/vi/ogRcq9HDTRs/maxresdefault.jpg)](https://youtu.be/ogRcq9HDTRs)
 
 ## Features
 

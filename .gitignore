@@ -1,3 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
 # Environment and credentials
 .env
 .env.*
@@ -5,8 +11,19 @@
 *.pem
 *.key
 *.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
 credentials.json
 service-account.json
+google-credentials.json
+*-credentials.json
+id_rsa
+id_ecdsa
+id_ed25519
+.ssh/
 
 # pytest-gremlins cache
 .gremlin-cache.db
