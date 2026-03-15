@@ -86,3 +86,8 @@ runs:
         INPUT_TARGETS: ${{ inputs.targets }}
         INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
       run: ${{ github.action_path }}/scripts/run-gremlins.sh
+
+    - name: Parse report
+      id: parse
+      shell: bash
+      run: ${{ github.action_path }}/scripts/parse-report.sh
