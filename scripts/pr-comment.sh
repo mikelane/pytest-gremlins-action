@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPORT="gremlin-report.json"
+REPORT="coverage/gremlins/gremlins.json"
 MARKER="<!-- pytest-gremlins-action -->"
 THRESHOLD="${INPUT_THRESHOLD}"
 

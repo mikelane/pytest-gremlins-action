@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPORT="gremlin-report.json"
+REPORT="coverage/gremlins/gremlins.json"
 
 if [[ ! -f "${REPORT}" ]]; then
-  echo "::error::gremlin-report.json not found. Did pytest-gremlins run successfully?"
+  echo "::error::${REPORT} not found. Did pytest-gremlins run successfully? Requires pytest-gremlins >= 1.6.0."
   exit 1
 fi
 
