@@ -85,6 +85,12 @@ Add to your README:
 
 Or use the `badge-url` output dynamically.
 
+## Prerequisites
+
+This action requires `jq` on the runner. GitHub-hosted runners (`ubuntu-latest`,
+`macos-latest`, `windows-latest`) include `jq` by default. If you use a self-hosted
+runner, install `jq` before calling this action.
+
 ## Permissions
 
 | Permission | Why |
