@@ -1,0 +1,78 @@
+name: 'pytest-gremlins'
+description: 'Run pytest-gremlins mutation testing with caching, score ratcheting, PR comments, and badges'
+author: 'Mike Lane'
+
+branding:
+  icon: 'zap'
+  color: 'green'
+
+inputs:
+  python-version:
+    description: 'Python version for actions/setup-python'
+    required: false
+    default: '3.12'
+  parallel:
+    description: 'Enable gremlins parallel execution (--gremlin-parallel)'
+    required: false
+    default: 'true'
+  workers:
+    description: 'Number of parallel workers (--gremlin-workers=N). Empty = all cores'
+    required: false
+    default: ''
+  cache:
+    description: 'Enable incremental mutation cache (--gremlin-cache)'
+    required: false
+    default: 'true'
+  report:
+    description: 'Report format passed to --gremlin-report'
+    required: false
+    default: 'json'
+  targets:
+    description: 'Override source paths to mutate (--gremlin-targets, comma-separated)'
+    required: false
+    default: ''
+  extra-args:
+    description: 'Additional pytest arguments passed through'
+    required: false
+    default: ''
+  ratchet-file:
+    description: 'File storing mutation score threshold for ratcheting'
+    required: false
+    default: '.gremlins-score'
+  pr-comment:
+    description: 'Post mutation report as PR comment'
+    required: false
+    default: 'true'
+
+outputs:
+  score:
+    description: 'Mutation score percentage'
+    value: ${{ steps.parse.outputs.score }}
+  zapped:
+    description: 'Mutations killed by tests'
+    value: ${{ steps.parse.outputs.zapped }}
+  survived:
+    description: 'Mutations that escaped detection'
+    value: ${{ steps.parse.outputs.survived }}
+  timeout:
+    description: 'Mutations caught by timeout'
+    value: ${{ steps.parse.outputs.timeout }}
+  total:
+    description: 'Total mutations tested'
+    value: ${{ steps.parse.outputs.total }}
+  pardoned:
+    description: 'Mutations intentionally suppressed'
+    value: ${{ steps.parse.outputs.pardoned }}
+  passed:
+    description: 'true if score >= ratcheted threshold'
+    value: ${{ steps.ratchet.outputs.passed }}
+  badge-url:
+    description: 'Shields.io badge URL for mutation score'
+    value: ${{ steps.badge.outputs.url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Placeholder
+      shell: bash
+      run: echo "Action steps will be added in subsequent tasks"
