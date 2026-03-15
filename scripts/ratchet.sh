@@ -16,6 +16,7 @@ echo "Current score: ${SCORE}%, threshold: ${THRESHOLD}%"
 # Compare using awk for float comparison
 PASSED=$(awk "BEGIN { print (${SCORE} >= ${THRESHOLD}) ? \"true\" : \"false\" }")
 echo "passed=${PASSED}" >> "${GITHUB_OUTPUT}"
+echo "threshold=${THRESHOLD}" >> "${GITHUB_OUTPUT}"
 
 if [ "${PASSED}" = "false" ]; then
   echo "::error::Mutation score ${SCORE}% is below ratchet threshold ${THRESHOLD}%"
