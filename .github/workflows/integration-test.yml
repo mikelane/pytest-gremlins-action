@@ -1,0 +1,86 @@
+name: integration-test
+
+on:
+  pull_request:
+    paths:
+      - 'action.yml'
+      - 'scripts/**'
+  workflow_dispatch:
+
+jobs:
+  test-action:
+    name: test-action
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create test fixture
+        run: |
+          mkdir -p src/calc tests
+          cat > src/calc/__init__.py << 'PYEOF'
+          def add(a: int, b: int) -> int:
+              return a + b
+
+          def subtract(a: int, b: int) -> int:
+              return a - b
+          PYEOF
+
+          cat > tests/test_calc.py << 'PYEOF'
+          from calc import add, subtract
+
+          def test_add():
+              assert add(2, 3) == 5
+
+          def test_add_zero():
+              assert add(0, 5) == 5
+
+          def test_subtract():
+              assert subtract(10, 4) == 6
+          PYEOF
+
+          cat > pyproject.toml << 'PYEOF'
+          [project]
+          name = "test-fixture"
+          version = "0.1.0"
+          requires-python = ">=3.11"
+
+          [tool.pytest-gremlins]
+          paths = ["src/calc"]
+          PYEOF
+
+          pip install pytest
+
+      - name: Run action
+        id: gremlins
+        uses: ./
+        with:
+          parallel: 'true'
+          cache: 'true'
+          pr-comment: 'false'
+
+      - name: Verify outputs exist
+        env:
+          GREMLINS_SCORE: ${{ steps.gremlins.outputs.score }}
+          GREMLINS_ZAPPED: ${{ steps.gremlins.outputs.zapped }}
+          GREMLINS_SURVIVED: ${{ steps.gremlins.outputs.survived }}
+          GREMLINS_TOTAL: ${{ steps.gremlins.outputs.total }}
+          GREMLINS_PASSED: ${{ steps.gremlins.outputs.passed }}
+          GREMLINS_BADGE: ${{ steps.gremlins.outputs.badge-url }}
+        run: |
+          echo "Score: ${GREMLINS_SCORE}"
+          echo "Zapped: ${GREMLINS_ZAPPED}"
+          echo "Survived: ${GREMLINS_SURVIVED}"
+          echo "Total: ${GREMLINS_TOTAL}"
+          echo "Passed: ${GREMLINS_PASSED}"
+          echo "Badge: ${GREMLINS_BADGE}"
+
+          # Verify score is a number
+          echo "${GREMLINS_SCORE}" | grep -qE '^[0-9]+\.?[0-9]*$'

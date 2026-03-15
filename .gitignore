@@ -1,9 +1,10 @@
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
 
-# Secret and credential files — never commit these
+# Environment and credentials
 .env
 .env.*
 !.env.example
@@ -13,13 +14,16 @@ __pycache__/
 *.pfx
 *.jks
 *.keystore
+*.crt
+*.cer
 credentials.json
 service-account.json
 google-credentials.json
 *-credentials.json
-*.crt
-*.cer
 id_rsa
 id_ecdsa
 id_ed25519
 .ssh/
+
+# pytest-gremlins cache
+.gremlin-cache.db

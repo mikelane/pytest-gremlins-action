@@ -6,57 +6,102 @@ Drop [pytest-gremlins](https://github.com/mikelane/pytest-gremlins) mutation tes
 
 [![pytest-gremlins-action demo: parallel mutation testing + score gate in one line of YAML](https://img.youtube.com/vi/ogRcq9HDTRs/maxresdefault.jpg)](https://youtu.be/ogRcq9HDTRs)
 
-## Usage
+## Features
 
-Minimal — fail the job if fewer than 80% of gremlins are zapped:
+- Run mutation testing in CI with one step
+- Incremental caching across workflow runs (13x speedup on repeat runs)
+- Score ratcheting — mutation score can only go up
+- PR comments with mutation report and surviving mutations table
+- Shields.io badge for README embedding
+
+## Quick Start
 
 ```yaml
-- name: Mutation testing
-  uses: mikelane/pytest-gremlins-action@v1
-  with:
-    threshold: '80'
+- uses: mikelane/pytest-gremlins-action@v1
 ```
 
-Full workflow:
+## Full Example
 
 ```yaml
-name: CI
-on: [push, pull_request]
+name: Mutation Testing
+on: [pull_request]
 
 jobs:
-  mutation-testing:
+  mutants:
     runs-on: ubuntu-latest
     permissions:
-      actions: write  # needed for cache read/write
+      contents: write
+      pull-requests: write
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install pytest pytest-gremlins pytest-xdist
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
       - uses: mikelane/pytest-gremlins-action@v1
+        id: gremlins
         with:
-          parallel: 'true'
           cache: 'true'
-          threshold: '80'
-          args: 'tests/'
+          parallel: 'true'
+
+      - name: Show score
+        run: echo "Mutation score: ${{ steps.gremlins.outputs.score }}%"
 ```
 
 ## Inputs
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `parallel` | `'true'` | Run gremlins in parallel via pytest-xdist (`-n auto`). Set to `'false'` for sequential mode. |
-| `cache` | `'true'` | Skip unchanged gremlins on subsequent runs using IncrementalCache. Requires `actions: write` permission. |
-| `threshold` | `'0'` | Minimum mutation score (0–100). The step exits non-zero if the score falls below this value. `'0'` disables the gate. |
-| `args` | `''` | Extra arguments forwarded verbatim to pytest (e.g. `tests/unit`). |
+| `python-version` | `'3.12'` | Python version |
+| `parallel` | `'true'` | Enable parallel mutation testing |
+| `workers` | `''` | Worker count (empty = all cores) |
+| `cache` | `'true'` | Enable incremental cache |
+| `targets` | `''` | Source paths to mutate |
+| `extra-args` | `''` | Additional pytest arguments |
+| `ratchet-file` | `'.gremlins-score'` | Score threshold file |
+| `pr-comment` | `'true'` | Post PR comment |
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
-| `mutation-score` | Mutation score as a numeric string, e.g. `"87.5"`. |
+| `score` | Mutation score (%) |
+| `zapped` | Killed mutations |
+| `survived` | Surviving mutations |
+| `timeout` | Timed-out mutations |
+| `total` | Total mutations |
+| `pardoned` | Pardoned mutations |
+| `passed` | `'true'` if score >= threshold |
+| `badge-url` | Shields.io badge URL |
+
+## Badge
+
+Add to your README:
+
+```markdown
+![Mutation Score](https://img.shields.io/badge/mutation_score-85.7%25-brightgreen)
+```
+
+Or use the `badge-url` output dynamically.
 
 ## Prerequisites
 
-`pytest-gremlins` must be installed in the Python environment before this action runs. When `parallel` is `true` (the default), `pytest-xdist` is also required — omitting it will cause the run to fail with a missing plugin error.
+This action requires `jq` on the runner. GitHub-hosted runners (`ubuntu-latest`,
+`macos-latest`, `windows-latest`) include `jq` by default. If you use a self-hosted
+runner, install `jq` before calling this action.
+
+## Permissions
+
+| Permission | Why |
+|-----------|-----|
+| `contents: write` | Auto-commit ratchet score updates |
+| `pull-requests: write` | Post PR comments |
+
+## License
+
+MIT
