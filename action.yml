@@ -99,3 +99,13 @@ runs:
         INPUT_SCORE: ${{ steps.parse.outputs.score }}
         INPUT_RATCHET_FILE: ${{ inputs.ratchet-file }}
       run: ${{ github.action_path }}/scripts/ratchet.sh
+
+    - name: Post PR comment
+      if: inputs.pr-comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        INPUT_THRESHOLD: ${{ steps.ratchet.outputs.threshold || '0' }}
+      run: ${{ github.action_path }}/scripts/pr-comment.sh
