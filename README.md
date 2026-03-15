@@ -57,7 +57,6 @@ jobs:
 | `parallel` | `'true'` | Enable parallel mutation testing |
 | `workers` | `''` | Worker count (empty = all cores) |
 | `cache` | `'true'` | Enable incremental cache |
-| `report` | `'json'` | Report format |
 | `targets` | `''` | Source paths to mutate |
 | `extra-args` | `''` | Additional pytest arguments |
 | `ratchet-file` | `'.gremlins-score'` | Score threshold file |

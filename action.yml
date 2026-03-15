@@ -23,10 +23,6 @@ inputs:
     description: 'Enable incremental mutation cache (--gremlin-cache)'
     required: false
     default: 'true'
-  report:
-    description: 'Report format passed to --gremlin-report'
-    required: false
-    default: 'json'
   targets:
     description: 'Override source paths to mutate (--gremlin-targets, comma-separated)'
     required: false
