@@ -73,6 +73,16 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Placeholder
+    - name: Install pytest-gremlins
       shell: bash
-      run: echo "Action steps will be added in subsequent tasks"
+      run: pip install pytest-gremlins
+
+    - name: Run mutation testing
+      shell: bash
+      env:
+        INPUT_PARALLEL: ${{ inputs.parallel }}
+        INPUT_WORKERS: ${{ inputs.workers }}
+        INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_TARGETS: ${{ inputs.targets }}
+        INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
+      run: ${{ github.action_path }}/scripts/run-gremlins.sh
