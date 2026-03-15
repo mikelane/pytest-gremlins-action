@@ -1,0 +1,12 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+service-account.json
+
+# pytest-gremlins cache
+.gremlin-cache.db
