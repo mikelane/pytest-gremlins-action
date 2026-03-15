@@ -80,7 +80,7 @@ runs:
 
     - name: Install pytest-gremlins
       shell: bash
-      run: pip install "pytest-gremlins @ git+https://github.com/mikelane/pytest-gremlins.git@main"
+      run: pip install "pytest-gremlins>=1.5.1"
 
     - name: Run mutation testing
       shell: bash
