@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Validate action.yml exists and is valid YAML
         run: python3 -c "import yaml; yaml.safe_load(open('action.yml'))" && echo "action.yml is valid YAML"
