@@ -2,7 +2,12 @@
 set -euo pipefail
 
 # Build pytest command as an array for safe execution
-CMD=(pytest --gremlins --gremlin-report=json)
+if [[ -n "${INPUT_COMMAND_PREFIX:-}" ]]; then
+  read -ra PREFIX <<< "${INPUT_COMMAND_PREFIX}"
+  CMD=("${PREFIX[@]}" pytest --gremlins --gremlin-report=json)
+else
+  CMD=(pytest --gremlins --gremlin-report=json)
+fi
 
 if [[ "${INPUT_PARALLEL}" = "true" ]]; then
   CMD+=(--gremlin-parallel)

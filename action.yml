@@ -35,6 +35,14 @@ inputs:
     description: 'File storing mutation score threshold for ratcheting'
     required: false
     default: '.gremlins-score'
+  command-prefix:
+    description: 'Command prefix for pytest invocation (e.g., uv run, poetry run, pdm run)'
+    required: false
+    default: ''
+  skip-install:
+    description: 'Skip pip install of pytest-gremlins (set true when your environment already provides it)'
+    required: false
+    default: 'false'
   pr-comment:
     description: 'Post mutation report as PR comment'
     required: false
@@ -79,12 +87,14 @@ runs:
           gremlins-
 
     - name: Install pytest-gremlins
+      if: inputs.skip-install != 'true'
       shell: bash
       run: pip install "pytest-gremlins>=1.5.1"
 
     - name: Run mutation testing
       shell: bash
       env:
+        INPUT_COMMAND_PREFIX: ${{ inputs.command-prefix }}
         INPUT_PARALLEL: ${{ inputs.parallel }}
         INPUT_WORKERS: ${{ inputs.workers }}
         INPUT_CACHE: ${{ inputs.cache }}
